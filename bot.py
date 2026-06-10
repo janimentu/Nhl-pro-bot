@@ -1,13 +1,9 @@
 import requests
 from datetime import datetime, timedelta
 import os
-from openai import OpenAI
 
 BOT_TOKEN = os.environ["BOT_TOKEN"]
 CHAT_ID = os.environ["CHAT_ID"]
-OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
-
-client = OpenAI(api_key=OPENAI_API_KEY)
 
 def send(msg):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
@@ -30,40 +26,41 @@ def extract(data):
             as_ = g["awayTeam"].get("score", 0)
 
             games.append(f"{away} - {home} {as_}-{hs}")
-
-        except Exception:
+        except:
             continue
 
-    return "\n".join(games)
-def ai(text):
-    prompt = f"""
-Kirjoita NHL-yön suomenkielinen raportti:
+    return games
 
-- pelien tulokset
-- tärkeimmät pelaajat
-- suomalaiset jos löytyy
-- lyhyt analyysi
+def build_report(games):
+    if not games:
+        return "Ei NHL-pelejä viime yönä."
 
-PELIT:
-{text}
-"""
+    msg = "🏒 NHL RAPORTTI\n\n"
 
-    res = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[{"role": "user", "content": prompt}]
-    )
+    for g in games:
+        msg += g + "\n"
 
-    return res.choices[0].message.content
+    msg += "\n🔥 Yhteenveto:\n- Automaattinen NHL-kooste\n"
+
+    return msg
+
+def run():
+    data = get_games()
+    games = extract(data)
+    send(build_report(games))
+
+def check_updates():
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates"
+    r = requests.get(url).json()
+
+    for update in r.get("result", []):
+        msg = update.get("message", {}).get("text", "")
+
+        if msg.strip().lower() == "/nhl":
+            run()
 
 def main():
-    data = get_games()
-    text = extract(data)
-
-    if not text:
-        send("Ei NHL-pelejä viime yönä.")
-        return
-
-    report = "🏒 NHL PRO YÖKOOSTE\n\n" + ai(text)
-    send(report)
+    check_updates()
+    run()
 
 main()
