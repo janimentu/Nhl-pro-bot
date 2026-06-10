@@ -2,8 +2,9 @@ name: NHL Pro Bot
 
 on:
   schedule:
-    - cron: "0 6 * * *"  # 09:00 Suomen aikaa
+    - cron: "0 6 * * *"
   workflow_dispatch:
+  push:
 
 jobs:
   run:
@@ -23,6 +24,3 @@ jobs:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           CHAT_ID: ${{ secrets.CHAT_ID }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-on:
-  workflow_dispatch:
-  push:
