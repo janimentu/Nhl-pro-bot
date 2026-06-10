@@ -20,14 +20,21 @@ def get_games():
 
 def extract(data):
     games = []
-    for g in data.get("games", []):
-        home = g["homeTeam"]["placeName"]["default"]
-        away = g["awayTeam"]["placeName"]["default"]
-        hs = g["homeTeam"]["score"]
-        as_ = g["awayTeam"]["score"]
-        games.append(f"{away} - {home} {as_}-{hs}")
-    return "\n".join(games)
 
+    for g in data.get("games", []):
+        try:
+            home = g["homeTeam"].get("placeName", {}).get("default", g["homeTeam"].get("abbrev", "HOME"))
+            away = g["awayTeam"].get("placeName", {}).get("default", g["awayTeam"].get("abbrev", "AWAY"))
+
+            hs = g["homeTeam"].get("score", 0)
+            as_ = g["awayTeam"].get("score", 0)
+
+            games.append(f"{away} - {home} {as_}-{hs}")
+
+        except Exception:
+            continue
+
+    return "\n".join(games)
 def ai(text):
     prompt = f"""
 Kirjoita NHL-yön suomenkielinen raportti:
