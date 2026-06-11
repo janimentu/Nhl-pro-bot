@@ -42,7 +42,7 @@ def send(msg):
     })
 
 def get_yesterday():
-    return (datetime.utcnow() - timedelta(days=1)).strftime("%Y-%m-%d")
+    return "2025-12-15"  # vaihda takaisin: return (datetime.utcnow() - timedelta(days=1)).strftime("%Y-%m-%d")
 
 def get_games(date):
     return requests.get(f"https://api-web.nhle.com/v1/score/{date}").json()
@@ -98,7 +98,7 @@ def format_goal(play, roster, home_team_id):
     situation = play.get("situationCode", "0000")
     try:
         away_skaters = int(situation[1])
-        home_skaters = int(situation[3])
+        home_skaters = int(situation[2])
         if away_skaters != home_skaters:
             scorer_team_id = details.get("eventOwnerTeamId")
             scoring_team_is_home = (scorer_team_id == home_team_id)
@@ -216,24 +216,8 @@ def check_updates():
         if msg.strip().lower() == "/nhl":
             run()
 
-def debug():
-    date = "2025-12-15"
-    data = requests.get(f"https://api-web.nhle.com/v1/score/{date}").json()
-    g = data["games"][0]
-    game_id = g["id"]
-    pbp = requests.get(f"https://api-web.nhle.com/v1/gamecenter/{game_id}/play-by-play").json()
-    goals = [p for p in pbp.get("plays", []) if p.get("typeDescKey") == "goal"]
-    lines = []
-    for goal in goals:
-        sc = goal.get("situationCode", "?")
-        away_s = sc[1] if len(sc) > 1 else "?"
-        home_s = sc[3] if len(sc) > 3 else "?"
-        scorer = goal.get("details", {}).get("scoringPlayerId", "?")
-        lines.append(f"{sc} (vieras:{away_s} koti:{home_s}) pelaaja:{scorer}")
-    send("\n".join(lines))
-
 def main():
     check_updates()
     run()
 
-debug()
+main()
