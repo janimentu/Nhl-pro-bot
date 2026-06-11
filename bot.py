@@ -247,6 +247,29 @@ def debug():
             + f"\ntoi arvo: {fwd[0].get('toi')}"
             + f"\nplayerId: {fwd[0].get('playerId')}")
 
+def debug():
+    date = "2025-12-15"
+    data = requests.get(f"https://api-web.nhle.com/v1/score/{date}").json()
+    g = data["games"][0]
+    game_id = g["id"]
+
+    # Kokeillaan landing-endpointia
+    landing = requests.get(f"https://api-web.nhle.com/v1/gamecenter/{game_id}/landing").json()
+    debug_send("=== LANDING KEYS ===\n" + json.dumps(list(landing.keys()), indent=2))
+
+    # Boxscoren rakenne tarkemmin
+    box = requests.get(f"https://api-web.nhle.com/v1/gamecenter/{game_id}/boxscore").json()
+    debug_send("=== BOXSCORE TOP KEYS ===\n" + json.dumps(list(box.keys()), indent=2))
+    debug_send("=== HOMETEAM KEYS ===\n" + json.dumps(list(box.get("homeTeam", {}).keys()), indent=2))
+
+    # Pelaajan kenttien nimet
+    fwd = box.get("homeTeam", {}).get("playerByGameStats", {}).get("forwards", [])
+    if fwd:
+        debug_send("=== PLAYER FIELDS ===\n" + json.dumps(list(fwd[0].keys()), indent=2)
+            + f"\ntoi arvo: {fwd[0].get('toi')}"
+            + f"\nplayerId: {fwd[0].get('playerId')}")
+
+
 # ============================================================
 # Vaihda debug() -> run() kun bugit on korjattu
 # ============================================================
