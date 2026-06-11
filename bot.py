@@ -42,7 +42,7 @@ def send(msg):
     })
 
 def get_yesterday():
-    return "2025-12-15"  # vaihda takaisin: return (datetime.utcnow() - timedelta(days=1)).strftime("%Y-%m-%d")
+    return (datetime.utcnow() - timedelta(days=1)).strftime("%Y-%m-%d")
 
 def get_games(date):
     return requests.get(f"https://api-web.nhle.com/v1/score/{date}").json()
