@@ -6,14 +6,33 @@ import json
 BOT_TOKEN = os.environ["BOT_TOKEN"]
 CHAT_ID = os.environ["CHAT_ID"]
 
-FINNISH_NAMES = [
-    "Barkov", "Lundell", "Mikkola", "Räty", "Pesonen",
-    "Kivenmäki", "Heiskanen", "Välimäki", "Nousiainen",
-    "Kotkaniemi", "Laine", "Rantanen", "Granlund",
-    "Käkönen", "Björninen", "Karjalainen", "Heponiemi",
-    "Virtanen", "Kuokkanen", "Ruotsalainen", "Puistola",
-    "Aaltonen", "Nurmi", "Peltonen", "Tyni", "Salo"
-]
+# Välimuisti suomalaisille pelaajille
+_FINNISH_IDS = None
+
+def get_finnish_player_ids():
+    global _FINNISH_IDS
+    if _FINNISH_IDS is not None:
+        return _FINNISH_IDS
+
+    season = "20252026"
+    ids = set()
+
+    r = requests.get(
+        f"https://api.nhle.com/stats/rest/en/skater/bios"
+        f"?limit=-1&start=0&cayenneExp=seasonId={season} and nationalityCode=\"FIN\""
+    ).json()
+    for p in r.get("data", []):
+        ids.add(p["playerId"])
+
+    r2 = requests.get(
+        f"https://api.nhle.com/stats/rest/en/goalie/bios"
+        f"?limit=-1&start=0&cayenneExp=seasonId={season} and nationalityCode=\"FIN\""
+    ).json()
+    for p in r2.get("data", []):
+        ids.add(p["playerId"])
+
+    _FINNISH_IDS = ids
+    return _FINNISH_IDS
 
 def send(msg):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
@@ -23,40 +42,23 @@ def send(msg):
         "parse_mode": "HTML"
     })
 
-def debug_send(text):
-    # Telegram viesti max 4096 merkkiä, katkaistaan jos liian pitkä
-    text = str(text)[:3900]
-    send(f"<code>{text}</code>")
-
 def get_yesterday():
     return (datetime.utcnow() - timedelta(days=1)).strftime("%Y-%m-%d")
 
 def get_games(date):
-    url = f"https://api-web.nhle.com/v1/score/{date}"
-    return requests.get(url).json()
+    return requests.get(f"https://api-web.nhle.com/v1/score/{date}").json()
 
 def get_boxscore(game_id):
-    url = f"https://api-web.nhle.com/v1/gamecenter/{game_id}/boxscore"
     try:
-        return requests.get(url).json()
+        return requests.get(f"https://api-web.nhle.com/v1/gamecenter/{game_id}/boxscore").json()
     except:
         return {}
 
 def get_play_by_play(game_id):
-    url = f"https://api-web.nhle.com/v1/gamecenter/{game_id}/play-by-play"
     try:
-        return requests.get(url).json()
+        return requests.get(f"https://api-web.nhle.com/v1/gamecenter/{game_id}/play-by-play").json()
     except:
         return {}
-
-def is_finnish(name):
-    return any(fn.lower() in name.lower() for fn in FINNISH_NAMES)
-
-def format_toi(seconds):
-    if not seconds:
-        return "0:00"
-    m, s = divmod(int(seconds), 60)
-    return f"{m}:{s:02d}"
 
 def build_pbp_roster(pbp):
     roster = {}
@@ -70,7 +72,6 @@ def format_goal(play, roster):
     details = play.get("details", {})
     period = play.get("periodDescriptor", {}).get("number", "?")
     time_in_period = play.get("timeInPeriod", "??:??")
-
     period_label = {1: "1.", 2: "2.", 3: "3.", 4: "JA", 5: "RL"}.get(period, str(period))
 
     scorer_id = details.get("scoringPlayerId")
@@ -78,7 +79,7 @@ def format_goal(play, roster):
     assist2_id = details.get("assist2PlayerId")
 
     def get_name(pid):
-        if not pid or not roster:
+        if not pid:
             return None
         p = roster.get(pid, {})
         fn = p.get("firstName", {}).get("default", "")
@@ -92,15 +93,13 @@ def format_goal(play, roster):
     if assists:
         goal_str += f" ({', '.join(assists)})"
 
+    # situationCode esim "1451": [0]=vieraan MV, [1]=vieraan kenttäpelaajat, [2]=kodin MV, [3]=kodin kenttäpelaajat
     situation = play.get("situationCode", "0000")
     try:
-        away_skaters = int(situation[0])
-        home_skaters = int(situation[2])
+        away_skaters = int(situation[1])
+        home_skaters = int(situation[3])
         if away_skaters != home_skaters:
-            if away_skaters > home_skaters:
-                goal_str += " ⚡YV"
-            else:
-                goal_str += " ✂️AV"
+            goal_str += " ⚡YV" if away_skaters > home_skaters else " ✂️AV"
     except:
         pass
 
@@ -110,7 +109,7 @@ def format_goal(play, roster):
     elif goal_type == "empty-net":
         goal_str += " 🥅TM"
 
-    return goal_str, scorer_id, assist1_id, assist2_id
+    return goal_str
 
 def build_game_report(g):
     game_id = g.get("id")
@@ -130,32 +129,32 @@ def build_game_report(g):
     boxscore = get_boxscore(game_id)
     pbp = get_play_by_play(game_id)
     roster = build_pbp_roster(pbp)
+    finnish_ids = get_finnish_player_ids()
 
+    # Maalit
     goals = [p for p in pbp.get("plays", []) if p.get("typeDescKey") == "goal"]
     if goals:
         lines.append("\n<b>Maalit:</b>")
         for play in goals:
-            goal_line, *_ = format_goal(play, roster)
-            lines.append(goal_line)
+            lines.append(format_goal(play, roster))
 
+    # Suomalaiset pelaajat kansalaisuuden mukaan
     finnish_stats = []
+    pgstats = boxscore.get("playerByGameStats", {})
     for team_key in ["homeTeam", "awayTeam"]:
-        team = boxscore.get(team_key, {})
-        stats = team.get("playerByGameStats", {})
+        team = pgstats.get(team_key, {})
         for pos in ["forwards", "defense"]:
-            for player in stats.get(pos, []):
-                ln = player.get("lastName", {}).get("default", "")
-                fn = player.get("firstName", {}).get("default", "")
-                if is_finnish(ln):
+            for player in team.get(pos, []):
+                if player.get("playerId") in finnish_ids:
+                    name = player.get("name", {}).get("default", "?")
                     g_stat = player.get("goals", 0)
                     a_stat = player.get("assists", 0)
                     pts = g_stat + a_stat
-                    toi = format_toi(player.get("toi"))
-                    shots = player.get("shots", 0)
+                    toi = player.get("toi", "0:00")
+                    shots = player.get("sog", 0)
                     hits = player.get("hits", 0)
-                    full = f"{fn} {ln}"
                     finnish_stats.append(
-                        f"  {full}: {g_stat}+{a_stat}={pts}  🕐{toi}  🎯{shots} laukausta"
+                        f"  {name}: {g_stat}+{a_stat}={pts}  🕐{toi}  🎯{shots} laukausta"
                         + (f"  💪{hits} taklaus" if hits else "")
                     )
 
@@ -163,25 +162,10 @@ def build_game_report(g):
         lines.append("\n<b>🇫🇮 Suomalaiset:</b>")
         lines.extend(finnish_stats)
 
-    try:
-        home_stats = boxscore.get("homeTeam", {}).get("teamGameStats", [])
-        away_stats = boxscore.get("awayTeam", {}).get("teamGameStats", [])
-
-        def get_stat(stats_list, category):
-            for s in stats_list:
-                if s.get("category") == category:
-                    return s.get("value", "-")
-            return "-"
-
-        sog_home = get_stat(home_stats, "sog")
-        sog_away = get_stat(away_stats, "sog")
-        pp_home = get_stat(home_stats, "powerPlayPctg")
-        pp_away = get_stat(away_stats, "powerPlayPctg")
-
-        lines.append(f"\n📊 Laukaukset: {away} {sog_away} – {sog_home} {home}")
-        lines.append(f"⚡ PP%: {away} {pp_away} – {pp_home} {home}")
-    except:
-        pass
+    # Laukaukset suoraan homeTeam/awayTeam.sog kentästä
+    sog_home = boxscore.get("homeTeam", {}).get("sog", "-")
+    sog_away = boxscore.get("awayTeam", {}).get("sog", "-")
+    lines.append(f"\n📊 Laukaukset: {away} {sog_away} – {sog_home} {home}")
 
     return "\n".join(lines)
 
@@ -223,76 +207,8 @@ def check_updates():
         if msg.strip().lower() == "/nhl":
             run()
 
-def debug():
-    date = "2025-12-15"
-    data = requests.get(f"https://api-web.nhle.com/v1/score/{date}").json()
-    g = data["games"][0]
-    game_id = g["id"]
+def main():
+    check_updates()
+    run()
 
-    pbp = requests.get(f"https://api-web.nhle.com/v1/gamecenter/{game_id}/play-by-play").json()
-    goals = [p for p in pbp.get("plays", []) if p.get("typeDescKey") == "goal"]
-
-    debug_send("=== GOAL situationCode ===\n" + json.dumps({
-        "situationCode": goals[0].get("situationCode"),
-        "details": goals[0].get("details")
-    }, indent=2))
-
-    box = requests.get(f"https://api-web.nhle.com/v1/gamecenter/{game_id}/boxscore").json()
-    debug_send("=== TEAM GAME STATS ===\n" + json.dumps(
-        box.get("homeTeam", {}).get("teamGameStats"), indent=2))
-
-    fwd = box.get("homeTeam", {}).get("playerByGameStats", {}).get("forwards", [])
-    if fwd:
-        debug_send("=== PLAYER FIELDS ===\n" + json.dumps(list(fwd[0].keys()), indent=2)
-            + f"\ntoi arvo: {fwd[0].get('toi')}"
-            + f"\nplayerId: {fwd[0].get('playerId')}")
-
-def debug():
-    date = "2025-12-15"
-    data = requests.get(f"https://api-web.nhle.com/v1/score/{date}").json()
-    g = data["games"][0]
-    game_id = g["id"]
-
-    # Kokeillaan landing-endpointia
-    landing = requests.get(f"https://api-web.nhle.com/v1/gamecenter/{game_id}/landing").json()
-    debug_send("=== LANDING KEYS ===\n" + json.dumps(list(landing.keys()), indent=2))
-
-    # Boxscoren rakenne tarkemmin
-    box = requests.get(f"https://api-web.nhle.com/v1/gamecenter/{game_id}/boxscore").json()
-    debug_send("=== BOXSCORE TOP KEYS ===\n" + json.dumps(list(box.keys()), indent=2))
-    debug_send("=== HOMETEAM KEYS ===\n" + json.dumps(list(box.get("homeTeam", {}).keys()), indent=2))
-
-    # Pelaajan kenttien nimet
-    fwd = box.get("homeTeam", {}).get("playerByGameStats", {}).get("forwards", [])
-    if fwd:
-        debug_send("=== PLAYER FIELDS ===\n" + json.dumps(list(fwd[0].keys()), indent=2)
-            + f"\ntoi arvo: {fwd[0].get('toi')}"
-            + f"\nplayerId: {fwd[0].get('playerId')}")
-
-def debug():
-    date = "2025-12-15"
-    data = requests.get(f"https://api-web.nhle.com/v1/score/{date}").json()
-    g = data["games"][0]
-    game_id = g["id"]
-
-    box = requests.get(f"https://api-web.nhle.com/v1/gamecenter/{game_id}/boxscore").json()
-
-    # Pelaajatilastot ylätasolla
-    pgstats = box.get("playerByGameStats", {})
-    debug_send("=== PLAYERBYGAMESTATS KEYS ===\n" + json.dumps(list(pgstats.keys()), indent=2))
-    fwd = pgstats.get("homeTeam", {}).get("forwards", [])
-    if fwd:
-        debug_send("=== PLAYER FIELDS ===\n" + json.dumps(fwd[0], indent=2))
-
-    # Landing summary
-    landing = requests.get(f"https://api-web.nhle.com/v1/gamecenter/{game_id}/landing").json()
-    summary = landing.get("summary", {})
-    debug_send("=== SUMMARY KEYS ===\n" + json.dumps(list(summary.keys()), indent=2))
-    debug_send("=== TEAM STATS ===\n" + json.dumps(summary.get("teamGameStats"), indent=2))
-
-
-
-# ============================================================
-# Vaihda debug() -> run() kun bugit on korjattu
-# ============================================================
-debug()
+main()
