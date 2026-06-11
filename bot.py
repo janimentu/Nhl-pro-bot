@@ -23,6 +23,11 @@ def send(msg):
         "parse_mode": "HTML"
     })
 
+def debug_send(text):
+    # Telegram viesti max 4096 merkkiä, katkaistaan jos liian pitkä
+    text = str(text)[:3900]
+    send(f"<code>{text}</code>")
+
 def get_yesterday():
     return (datetime.utcnow() - timedelta(days=1)).strftime("%Y-%m-%d")
 
@@ -218,40 +223,31 @@ def check_updates():
         if msg.strip().lower() == "/nhl":
             run()
 
+def debug():
+    date = "2025-12-15"
+    data = requests.get(f"https://api-web.nhle.com/v1/score/{date}").json()
+    g = data["games"][0]
+    game_id = g["id"]
+
+    pbp = requests.get(f"https://api-web.nhle.com/v1/gamecenter/{game_id}/play-by-play").json()
+    goals = [p for p in pbp.get("plays", []) if p.get("typeDescKey") == "goal"]
+
+    debug_send("=== GOAL situationCode ===\n" + json.dumps({
+        "situationCode": goals[0].get("situationCode"),
+        "details": goals[0].get("details")
+    }, indent=2))
+
+    box = requests.get(f"https://api-web.nhle.com/v1/gamecenter/{game_id}/boxscore").json()
+    debug_send("=== TEAM GAME STATS ===\n" + json.dumps(
+        box.get("homeTeam", {}).get("teamGameStats"), indent=2))
+
+    fwd = box.get("homeTeam", {}).get("playerByGameStats", {}).get("forwards", [])
+    if fwd:
+        debug_send("=== PLAYER FIELDS ===\n" + json.dumps(list(fwd[0].keys()), indent=2)
+            + f"\ntoi arvo: {fwd[0].get('toi')}"
+            + f"\nplayerId: {fwd[0].get('playerId')}")
 
 # ============================================================
-# DEBUG - poista kun bugit on korjattu, palauta main() tilalle
+# Vaihda debug() -> run() kun bugit on korjattu
 # ============================================================
-
-date = "2025-12-15"
-data = requests.get(f"https://api-web.nhle.com/v1/score/{date}").json()
-g = data["games"][0]
-game_id = g["id"]
-
-pbp = requests.get(f"https://api-web.nhle.com/v1/gamecenter/{game_id}/play-by-play").json()
-goals = [p for p in pbp.get("plays", []) if p.get("typeDescKey") == "goal"]
-print("=== GOAL situationCode ===")
-print(json.dumps({
-    "situationCode": goals[0].get("situationCode"),
-    "details": goals[0].get("details")
-}, indent=2))
-
-box = requests.get(f"https://api-web.nhle.com/v1/gamecenter/{game_id}/boxscore").json()
-print("\n=== TEAM GAME STATS ===")
-print(json.dumps(box.get("homeTeam", {}).get("teamGameStats"), indent=2))
-
-fwd = box.get("homeTeam", {}).get("playerByGameStats", {}).get("forwards", [])
-print("\n=== PLAYER FIELDS ===")
-if fwd:
-    print(json.dumps(list(fwd[0].keys()), indent=2))
-    print("toi arvo:", fwd[0].get("toi"))
-    print("playerId:", fwd[0].get("playerId"))
-
-# ============================================================
-# Palauta tämä käyttöön kun debug on valmis:
-# def main():
-#     check_updates()
-#     run()
-#
-# main()
-# ============================================================
+debug()
