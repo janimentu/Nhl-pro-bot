@@ -88,10 +88,15 @@ def format_goal(play, roster, home_team_id, finnish_ids):
     assist1_id = details.get("assist1PlayerId")
     assist2_id = details.get("assist2PlayerId")
 
+    # Tulos tämän maalin jälkeen — API palauttaa awayScore/homeScore per maali
+    away_score = details.get("awayScore", "?")
+    home_score = details.get("homeScore", "?")
+    score_str = f"{away_score}–{home_score}"
+
     scorer = format_name(scorer_id, roster, finnish_ids) or "Tuntematon"
     assists = [format_name(a, roster, finnish_ids) for a in [assist1_id, assist2_id] if a]
 
-    goal_str = f"  {period_label} {time_in_period}  {scorer}"
+    goal_str = f"  {period_label} {time_in_period}  ({score_str})  {scorer}"
     if assists:
         goal_str += f" ({', '.join(assists)})"
 
