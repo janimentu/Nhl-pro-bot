@@ -41,12 +41,8 @@ def send(msg):
         "parse_mode": "HTML"
     })
 
-def debug_send(text):
-    text = str(text)[:3900]
-    send(f"<code>{text}</code>")
-
 def get_yesterday():
-    return "2025-12-15"  # vaihda takaisin: (datetime.utcnow() - timedelta(days=1)).strftime("%Y-%m-%d")
+    return (datetime.utcnow() - timedelta(days=1)).strftime("%Y-%m-%d")
 
 def get_games(date):
     return requests.get(f"https://api-web.nhle.com/v1/score/{date}").json()
@@ -96,16 +92,22 @@ def format_goal(play, roster, home_team_id):
     if assists:
         goal_str += f" ({', '.join(assists)})"
 
+    # situationCode esim "1451":
+    # [0] = vieraan MV (1=kentällä), [1] = vieraan kenttäpelaajat
+    # [2] = kodin MV (1=kentällä),   [3] = kodin kenttäpelaajat
     situation = play.get("situationCode", "0000")
     try:
         away_skaters = int(situation[1])
         home_skaters = int(situation[3])
         if away_skaters != home_skaters:
             scorer_team_id = details.get("eventOwnerTeamId")
-            if scorer_team_id == home_team_id:
-                goal_str += " ⚡YV" if home_skaters > away_skaters else " ✂️AV"
+            scoring_team_is_home = (scorer_team_id == home_team_id)
+            scoring_team_skaters = home_skaters if scoring_team_is_home else away_skaters
+            other_team_skaters = away_skaters if scoring_team_is_home else home_skaters
+            if scoring_team_skaters > other_team_skaters:
+                goal_str += " ⚡YV"
             else:
-                goal_str += " ⚡YV" if away_skaters > home_skaters else " ✂️AV"
+                goal_str += " ✂️AV"
     except:
         pass
 
@@ -121,7 +123,6 @@ def build_game_report(g):
     game_id = g.get("id")
     home = g["homeTeam"].get("placeName", {}).get("default", g["homeTeam"].get("abbrev", "HOME"))
     away = g["awayTeam"].get("placeName", {}).get("default", g["awayTeam"].get("abbrev", "AWAY"))
-    home_team_id = g["homeTeam"].get("id")
     hs = g["homeTeam"].get("score", 0)
     as_ = g["awayTeam"].get("score", 0)
 
@@ -135,6 +136,10 @@ def build_game_report(g):
 
     boxscore = get_boxscore(game_id)
     pbp = get_play_by_play(game_id)
+
+    # Kotijoukkueen ID PBP:n ylätasolta
+    home_team_id = pbp.get("homeTeam", {}).get("id")
+
     roster = build_pbp_roster(pbp)
     finnish_ids = get_finnish_player_ids()
 
@@ -211,20 +216,8 @@ def check_updates():
         if msg.strip().lower() == "/nhl":
             run()
 
-# ============================================================
-# DEBUG - tarkistetaan PBP:n ylätason kentät
-# ============================================================
-def debug():
-    date = "2025-12-15"
-    data = requests.get(f"https://api-web.nhle.com/v1/score/{date}").json()
-    g = data["games"][0]
-    game_id = g["id"]
+def main():
+    check_updates()
+    run()
 
-    pbp = requests.get(f"https://api-web.nhle.com/v1/gamecenter/{game_id}/play-by-play").json()
-    debug_send("=== PBP TOP KEYS ===\n" + json.dumps(list(pbp.keys()), indent=2))
-
-    goals = [p for p in pbp.get("plays", []) if p.get("typeDescKey") == "goal"]
-    debug_send("=== GOAL FULL ===\n" + json.dumps(goals[0], indent=2))
-
-# Vaihda debug() -> run() kun valmis
-debug()
+main()
