@@ -43,7 +43,8 @@ def send(msg):
     })
 
 def get_yesterday():
-    return "2025-12-15"
+    return (datetime.utcnow() - timedelta(days=1)).strftime("%Y-%m-%d")
+
 
 
 def get_games(date):
