@@ -269,6 +269,28 @@ def debug():
             + f"\ntoi arvo: {fwd[0].get('toi')}"
             + f"\nplayerId: {fwd[0].get('playerId')}")
 
+def debug():
+    date = "2025-12-15"
+    data = requests.get(f"https://api-web.nhle.com/v1/score/{date}").json()
+    g = data["games"][0]
+    game_id = g["id"]
+
+    box = requests.get(f"https://api-web.nhle.com/v1/gamecenter/{game_id}/boxscore").json()
+
+    # Pelaajatilastot ylätasolla
+    pgstats = box.get("playerByGameStats", {})
+    debug_send("=== PLAYERBYGAMESTATS KEYS ===\n" + json.dumps(list(pgstats.keys()), indent=2))
+    fwd = pgstats.get("homeTeam", {}).get("forwards", [])
+    if fwd:
+        debug_send("=== PLAYER FIELDS ===\n" + json.dumps(fwd[0], indent=2))
+
+    # Landing summary
+    landing = requests.get(f"https://api-web.nhle.com/v1/gamecenter/{game_id}/landing").json()
+    summary = landing.get("summary", {})
+    debug_send("=== SUMMARY KEYS ===\n" + json.dumps(list(summary.keys()), indent=2))
+    debug_send("=== TEAM STATS ===\n" + json.dumps(summary.get("teamGameStats"), indent=2))
+
+
 
 # ============================================================
 # Vaihda debug() -> run() kun bugit on korjattu
