@@ -42,7 +42,7 @@ def send(msg):
     })
 
 def get_yesterday():
-    return (datetime.utcnow() - timedelta(days=1)).strftime("%Y-%m-%d")
+    return "2025-12-15"  # vaihda: (datetime.utcnow() - timedelta(days=1)).strftime("%Y-%m-%d")
 
 def get_games(date):
     return requests.get(f"https://api-web.nhle.com/v1/score/{date}").json()
@@ -67,7 +67,18 @@ def build_pbp_roster(pbp):
             roster[pid] = spot
     return roster
 
-def format_goal(play, roster, home_team_id):
+def format_name(pid, roster, finnish_ids):
+    if not pid:
+        return None
+    p = roster.get(pid, {})
+    fn = p.get("firstName", {}).get("default", "")
+    ln = p.get("lastName", {}).get("default", "")
+    name = f"{fn} {ln}".strip() if fn or ln else f"#{pid}"
+    if pid in finnish_ids:
+        return f"<b>{name}</b>"
+    return name
+
+def format_goal(play, roster, home_team_id, finnish_ids):
     details = play.get("details", {})
     period = play.get("periodDescriptor", {}).get("number", "?")
     time_in_period = play.get("timeInPeriod", "??:??")
@@ -77,24 +88,13 @@ def format_goal(play, roster, home_team_id):
     assist1_id = details.get("assist1PlayerId")
     assist2_id = details.get("assist2PlayerId")
 
-    def get_name(pid):
-        if not pid:
-            return None
-        p = roster.get(pid, {})
-        fn = p.get("firstName", {}).get("default", "")
-        ln = p.get("lastName", {}).get("default", "")
-        return f"{fn} {ln}".strip() if fn or ln else f"#{pid}"
-
-    scorer = get_name(scorer_id) or "Tuntematon"
-    assists = [get_name(a) for a in [assist1_id, assist2_id] if a]
+    scorer = format_name(scorer_id, roster, finnish_ids) or "Tuntematon"
+    assists = [format_name(a, roster, finnish_ids) for a in [assist1_id, assist2_id] if a]
 
     goal_str = f"  {period_label} {time_in_period}  {scorer}"
     if assists:
         goal_str += f" ({', '.join(assists)})"
 
-    # situationCode esim "1451":
-    # [0] = vieraan MV (1=kentällä), [1] = vieraan kenttäpelaajat
-    # [2] = kodin MV (1=kentällä),   [3] = kodin kenttäpelaajat
     situation = play.get("situationCode", "0000")
     try:
         away_skaters = int(situation[1])
@@ -119,6 +119,19 @@ def format_goal(play, roster, home_team_id):
 
     return goal_str
 
+def format_penalty(play, roster, finnish_ids):
+    details = play.get("details", {})
+    period = play.get("periodDescriptor", {}).get("number", "?")
+    time_in_period = play.get("timeInPeriod", "??:??")
+    period_label = {1: "1.", 2: "2.", 3: "3.", 4: "JA", 5: "RL"}.get(period, str(period))
+
+    pid = details.get("committedByPlayerId")
+    name = format_name(pid, roster, finnish_ids) or "Tuntematon"
+    desc = details.get("descKey", "").replace("-", " ")
+    duration = details.get("duration", "?")
+
+    return f"  {period_label} {time_in_period}  {name} – {desc} ({duration} min)"
+
 def build_game_report(g):
     game_id = g.get("id")
     home = g["homeTeam"].get("placeName", {}).get("default", g["homeTeam"].get("abbrev", "HOME"))
@@ -136,19 +149,25 @@ def build_game_report(g):
 
     boxscore = get_boxscore(game_id)
     pbp = get_play_by_play(game_id)
-
-    # Kotijoukkueen ID PBP:n ylätasolta
     home_team_id = pbp.get("homeTeam", {}).get("id")
-
     roster = build_pbp_roster(pbp)
     finnish_ids = get_finnish_player_ids()
 
+    # Maalit
     goals = [p for p in pbp.get("plays", []) if p.get("typeDescKey") == "goal"]
     if goals:
         lines.append("\n<b>Maalit:</b>")
         for play in goals:
-            lines.append(format_goal(play, roster, home_team_id))
+            lines.append(format_goal(play, roster, home_team_id, finnish_ids))
 
+    # Jäähyt
+    penalties = [p for p in pbp.get("plays", []) if p.get("typeDescKey") == "penalty"]
+    if penalties:
+        lines.append("\n<b>Jäähyt:</b>")
+        for play in penalties:
+            lines.append(format_penalty(play, roster, finnish_ids))
+
+    # Suomalaiset
     finnish_stats = []
     pgstats = boxscore.get("playerByGameStats", {})
     for team_key in ["homeTeam", "awayTeam"]:
@@ -216,20 +235,8 @@ def check_updates():
         if msg.strip().lower() == "/nhl":
             run()
 
-def debug():
-    date = "2025-12-15"
-    data = requests.get(f"https://api-web.nhle.com/v1/score/{date}").json()
-    g = data["games"][0]
-    game_id = g["id"]
-    pbp = requests.get(f"https://api-web.nhle.com/v1/gamecenter/{game_id}/play-by-play").json()
-    penalties = [p for p in pbp.get("plays", []) if p.get("typeDescKey") == "penalty"]
-    if penalties:
-        send(json.dumps(penalties[0], indent=2)[:3900])
-    else:
-        send("Ei jaahyja loydy")
-
 def main():
     check_updates()
     run()
 
-debug()
+main()
