@@ -281,4 +281,30 @@ def main():
     check_updates()
     run()
 
+# DEBUG - poista myöhemmin
+import json
+
+date = "2025-12-15"
+data = get_games(date)
+g = data["games"][0]  # eka peli
+game_id = g["id"]
+
+print("=== BOXSCORE SAMPLE ===")
+box = get_boxscore(game_id)
+home_players = box.get("homeTeam", {}).get("playerByGameStats", {}).get("forwards", [])
+if home_players:
+    print(json.dumps(home_players[0], indent=2))
+
+print("\n=== PBP FIRST GOAL ===")
+pbp = get_play_by_play(game_id)
+goals = [p for p in pbp.get("plays", []) if p.get("typeDescKey") == "goal"]
+if goals:
+    print(json.dumps(goals[0], indent=2))
+
+print("\n=== PBP ROSTER SAMPLE ===")
+spots = pbp.get("rosterSpots", [])
+if spots:
+    print(json.dumps(spots[0], indent=2))
+
+
 main()
