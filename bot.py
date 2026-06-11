@@ -216,8 +216,20 @@ def check_updates():
         if msg.strip().lower() == "/nhl":
             run()
 
+def debug():
+    date = "2025-12-15"
+    data = requests.get(f"https://api-web.nhle.com/v1/score/{date}").json()
+    g = data["games"][0]
+    game_id = g["id"]
+    pbp = requests.get(f"https://api-web.nhle.com/v1/gamecenter/{game_id}/play-by-play").json()
+    penalties = [p for p in pbp.get("plays", []) if p.get("typeDescKey") == "penalty"]
+    if penalties:
+        send(json.dumps(penalties[0], indent=2)[:3900])
+    else:
+        send("Ei jaahyja loydy")
+
 def main():
     check_updates()
     run()
 
-main()
+debug()
