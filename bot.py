@@ -10,7 +10,7 @@ def send(msg):
     requests.post(url, data={"chat_id": CHAT_ID, "text": msg})
 
 def get_games():
-    yesterday = (datetime.utcnow() - timedelta(days=1)).strftime("%Y-%m-%d")
+    yesterday = "2025-12-15"
     url = f"https://api-web.nhle.com/v1/score/{yesterday}"
     return requests.get(url).json()
 
