@@ -42,7 +42,7 @@ def send(msg):
     })
 
 def get_yesterday():
-    return "2025-12-15"
+    return (datetime.utcnow() - timedelta(days=1)).strftime("%Y-%m-%d")
 
 def get_games(date):
     return requests.get(f"https://api-web.nhle.com/v1/score/{date}").json()
@@ -216,8 +216,24 @@ def check_updates():
         if msg.strip().lower() == "/nhl":
             run()
 
+def debug():
+    date = "2025-12-15"
+    data = requests.get(f"https://api-web.nhle.com/v1/score/{date}").json()
+    g = data["games"][0]
+    game_id = g["id"]
+    pbp = requests.get(f"https://api-web.nhle.com/v1/gamecenter/{game_id}/play-by-play").json()
+    goals = [p for p in pbp.get("plays", []) if p.get("typeDescKey") == "goal"]
+    lines = []
+    for goal in goals:
+        sc = goal.get("situationCode", "?")
+        away_s = sc[1] if len(sc) > 1 else "?"
+        home_s = sc[3] if len(sc) > 3 else "?"
+        scorer = goal.get("details", {}).get("scoringPlayerId", "?")
+        lines.append(f"{sc} (vieras:{away_s} koti:{home_s}) pelaaja:{scorer}")
+    send("\n".join(lines))
+
 def main():
     check_updates()
     run()
 
-main()
+debug()
